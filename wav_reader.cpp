@@ -1,8 +1,10 @@
+#define _USE_MATH_DEFINES
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 using std::cin;
 using std::cout;
 using std::endl;
@@ -31,7 +33,7 @@ typedef struct  WAV_HEADER
 
 // Function prototypes
 int getFileSize(FILE* inFile);
-
+double window(int x,int N);
 int main(int argc, char* argv[])
 {
     wav_hdr wavHeader;
@@ -51,12 +53,21 @@ int main(int argc, char* argv[])
         filePath = argv[1];
         cout << "Input wave file name: " << filePath << endl;
     }
-    char* filePath_s = (char*) malloc(sizeof(char)* (strlen(filePath)+1));
+    char* filePath_s = (char*) malloc(sizeof(char)* (strlen(filePath)+10));
     strcpy(filePath_s,filePath);
     FILE* wavFile = fopen(filePath, "rb");
     char *no_extFile = strtok(filePath_s,".");
+    char *no_extFile2 = (char*) malloc(sizeof(char)*(strlen(no_extFile)+10));
+    strcpy(no_extFile2,no_extFile);
     char *outFilePath = strcat(no_extFile,".out");
-    FILE* outFile = fopen(outFilePath,"wb");
+    char *outFileWindowPath = strcat(no_extFile2,"_window.out");
+    cout<< outFilePath << endl;
+    FILE* outFile = fopen(outFilePath,"w");
+    if (outFile == NULL) {
+        perror("Failed: ");
+        return 1;
+    }
+    FILE* outWindowFile = fopen(outFileWindowPath,"w");
     if (wavFile == nullptr)
     {
         fprintf(stderr, "Unable to open wave file: %s\n", filePath);
@@ -71,24 +82,34 @@ int main(int argc, char* argv[])
         //Read the data
         uint16_t bytesPerSample = wavHeader.bitsPerSample / 8;      //Number     of bytes per sample
         uint64_t numSamples = wavHeader.ChunkSize / bytesPerSample; //How many samples are in the wav file?
-        static const uint16_t BUFFER_SIZE = 4096;
+        static const uint16_t BUFFER_SIZE = 1024;
         int8_t* buffer = new int8_t[BUFFER_SIZE];
         int16_t* w_buffer = new int16_t[BUFFER_SIZE/2];
-        while ((bytesRead = fread(buffer, sizeof buffer[0], BUFFER_SIZE / (sizeof buffer[0]), wavFile)) > 0)
+        int16_t* w_window_buffer = new int16_t[BUFFER_SIZE/2];
+        if ((bytesRead = fread(buffer, sizeof buffer[0], BUFFER_SIZE / (sizeof buffer[0]), wavFile)) > 0)
         {
             /** DO SOMETHING WITH THE WAVE DATA HERE **/
             for(int i=0;i<bytesRead;i++){
                 if(i+1<bytesRead){
                     w_buffer[i/2] = (int16_t)buffer[i]+(((int16_t)buffer[i+1])<<8);
-                    cout << "Data #" << i/2 << " : " << w_buffer[i/2] << endl;
+                    w_window_buffer[i/2] = (int16_t) (w_buffer[i/2] * window(i/2,bytesRead/2));
+                    //cout << "Data #" << i/2 << " : " << w_buffer[i/2] << endl;
+                    fprintf(outFile,"%d\n",w_buffer[i/2]);
+                    fprintf(outWindowFile,"%d\n",w_window_buffer[i/2]);
                     i++;
                 }
             }
-            fwrite(w_buffer,sizeof w_buffer[0], BUFFER_SIZE / (sizeof w_buffer[0]),outFile);
+            //fwrite(w_buffer,sizeof w_buffer[0], BUFFER_SIZE / (sizeof w_buffer[0]),outFile);
             cout << "Read " << bytesRead << " bytes." << endl;
         }
+
         delete [] buffer;
+        delete [] w_buffer;
+        delete [] w_window_buffer;
         buffer = nullptr;
+        w_buffer = nullptr;
+        w_window_buffer = nullptr;
+
         filelength = getFileSize(wavFile);
 
         cout << "File is                    :" << filelength << " bytes." << endl;
@@ -124,4 +145,10 @@ int getFileSize(FILE* inFile)
 
     fseek(inFile, 0, SEEK_SET);
     return fileSize;
+}
+
+double window(int x,int N){
+    double a = 0.54f;
+    double b = 0.46f;
+    return a-b*cos(2*(double)x*M_PI/(double)(N-1));
 }
